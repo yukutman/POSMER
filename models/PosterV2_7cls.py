@@ -6,6 +6,7 @@ from .ir50 import Backbone
 from .vit_model import VisionTransformer, PatchEmbed
 from timm.models.layers import trunc_normal_, DropPath
 from thop import profile
+from mamba_ssm import Mamba
 
 
 def load_pretrained_weights(model, checkpoint):
@@ -247,7 +248,7 @@ class pyramid_trans_expr2(nn.Module):
         self.window_size = window_size
         self.N = [win * win for win in window_size]
         self.face_landback = MobileFaceNet([112, 112], 136)
-        face_landback_checkpoint = torch.load(r'C:\Users\86187\Desktop\posterv2\mixfacial\models\pretrain\mobilefacenet_model_best.pth.tar',
+        face_landback_checkpoint = torch.load(r'pretrain/mobilefacenet_model_best.pth.tar',
                                               map_location=lambda storage, loc: storage)
         self.face_landback.load_state_dict(face_landback_checkpoint['state_dict'])
 
@@ -257,13 +258,17 @@ class pyramid_trans_expr2(nn.Module):
         self.VIT = VisionTransformer(depth=2, embed_dim=embed_dim)
 
         self.ir_back = Backbone(50, 0.0, 'ir')
-        ir_checkpoint = torch.load(r'C:\Users\86187\Desktop\posterv2\mixfacial\models\pretrain\ir50.pth', map_location=lambda storage, loc: storage)
+        ir_checkpoint = torch.load(r'pretrain/ir50.pth', map_location=lambda storage, loc: storage)
 
         self.ir_back = load_pretrained_weights(self.ir_back, ir_checkpoint)
 
-        self.attn1 = WindowAttentionGlobal(dim=dims[0], num_heads=num_heads[0], window_size=window_size[0])
-        self.attn2 = WindowAttentionGlobal(dim=dims[1], num_heads=num_heads[1], window_size=window_size[1])
-        self.attn3 = WindowAttentionGlobal(dim=dims[2], num_heads=num_heads[2], window_size=window_size[2])
+        # self.attn1 = WindowAttentionGlobal(dim=dims[0], num_heads=num_heads[0], window_size=window_size[0])
+        # self.attn2 = WindowAttentionGlobal(dim=dims[1], num_heads=num_heads[1], window_size=window_size[1])
+        # self.attn3 = WindowAttentionGlobal(dim=dims[2], num_heads=num_heads[2], window_size=window_size[2])
+        # change with LandmarkGatedMamba instead of WindowAttentionGlobal
+        self.attn1 = LandmarkGatedMamba(dim=dims[0])
+        self.attn2 = LandmarkGatedMamba(dim=dims[1])
+        self.attn3 = LandmarkGatedMamba(dim=dims[2])
         self.window1 = window(window_size=window_size[0], dim=dims[0])
         self.window2 = window(window_size=window_size[1], dim=dims[1])
         self.window3 = window(window_size=window_size[2], dim=dims[2])
@@ -289,9 +294,9 @@ class pyramid_trans_expr2(nn.Module):
         x_face3 = self.last_face_conv(x_face3)
         x_face1, x_face2, x_face3 = _to_channel_last(x_face1), _to_channel_last(x_face2), _to_channel_last(x_face3)
 
-        q1, q2, q3 = _to_query(x_face1, self.N[0], self.num_heads[0], self.dim_head[0]), \
-                     _to_query(x_face2, self.N[1], self.num_heads[1], self.dim_head[1]), \
-                     _to_query(x_face3, self.N[2], self.num_heads[2], self.dim_head[2])
+        # q1, q2, q3 = _to_query(x_face1, self.N[0], self.num_heads[0], self.dim_head[0]), \
+        #             _to_query(x_face2, self.N[1], self.num_heads[1], self.dim_head[1]), \
+        #             _to_query(x_face3, self.N[2], self.num_heads[2], self.dim_head[2])
 
         x_ir1, x_ir2, x_ir3 = self.ir_back(x)
     
@@ -300,7 +305,7 @@ class pyramid_trans_expr2(nn.Module):
         x_window2, shortcut2 = self.window2(x_ir2)
         x_window3, shortcut3 = self.window3(x_ir3)
 
-        o1, o2, o3 = self.attn1(x_window1, q1), self.attn2(x_window2, q2), self.attn3(x_window3, q3)
+        o1, o2, o3 = self.attn1(x_window1, x_face1), self.attn2(x_window2, x_face2), self.attn3(x_window3, x_face3)
 
         o1, o2, o3 = self.ffn1(o1, shortcut1), self.ffn2(o2, shortcut2), self.ffn3(o3, shortcut3)
 
@@ -312,6 +317,62 @@ class pyramid_trans_expr2(nn.Module):
 
         out = self.VIT(o)
         return out
+
+
+
+class LandmarkGatedMamba(nn.Module):
+    def __init__(self, dim, d_state=16, d_conv=4, expand=2):
+        super().__init__()
+
+        # 1. The Gating Mechanism (FiLM)
+        # We project the landmark summary into 2 * dim (Alpha and Beta)
+        self.film_generator = nn.Linear(dim, dim * 2)
+
+        # Initialize alpha to 1 and beta to 0 (Identity transformation)
+        # This helps stability at the start of training
+        nn.init.constant_(self.film_generator.weight, 0)
+        nn.init.constant_(self.film_generator.bias, 0)
+        self.film_generator.bias.data[:dim] = 1  # Set alpha part to 1
+
+        # 2. The Mamba Block (Replaces the Attention mixing)
+        self.mamba = Mamba(
+            d_model=dim,
+            d_state=d_state,
+            d_conv=d_conv,
+            expand=expand
+        )
+
+        self.norm = nn.LayerNorm(dim)
+        self.act = nn.SiLU()  # Simple activation for the gate
+
+    def forward(self, x_img, x_lm):
+        B_windows, N, C = x_img.shape
+        B_face, N_lm, C_lm = x_lm.shape
+
+        # Calculate how many windows per image
+        num_windows = B_windows // B_face
+
+        # 1. Compute Summary (Batch, Dim)
+        if x_lm.dim() == 4: # to be safe from 4D input
+            # Flatten spatial dims: (B, H, W, C) -> (B, H*W, C)
+            x_lm = x_lm.reshape(x_lm.shape[0], -1, x_lm.shape[-1])
+
+        g = x_lm.mean(dim=1)
+
+        # 2. Generate Alpha/Beta (Batch, Dim)
+        film_params = self.film_generator(g)
+        alpha, beta = torch.split(film_params, C, dim=1)
+
+        # 3. Repeat for all windows
+        # We need to stretch (Batch, Dim) -> (Batch * Num_Windows, 1, Dim)
+        alpha = alpha.repeat_interleave(num_windows, dim=0).unsqueeze(1)
+        beta = beta.repeat_interleave(num_windows, dim=0).unsqueeze(1)
+
+        # 4. Modulate & Mamba
+        x_modulated = (alpha * x_img) + beta
+        x_out = self.mamba(self.norm(x_modulated))
+
+        return x_out + x_img
 
 def compute_param_flop():
     model = pyramid_trans_expr2()
