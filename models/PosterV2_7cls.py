@@ -296,7 +296,7 @@ class pyramid_trans_expr2(nn.Module):
         self.last_face_conv = nn.Conv2d(in_channels=512, out_channels=256, kernel_size=3, padding=1)
 
         self.proj1 = nn.Sequential(nn.Conv2d(dims[0], 768, kernel_size=3, stride=2, padding=1),
-                                     nn.Conv2d(768, 768, kernel_size=3, stride=2, padding=1))
+                                   nn.Conv2d(768, 768, kernel_size=3, stride=2, padding=1))
         self.proj2 = nn.Sequential(nn.Conv2d(dims[1], 768, kernel_size=3, stride=2, padding=1))
         self.proj3 = PatchEmbed(img_size=14, patch_size=14, in_c=256, embed_dim=768)
 
@@ -324,7 +324,7 @@ class pyramid_trans_expr2(nn.Module):
         o1, o2, o3 = _to_channel_first(o1), _to_channel_first(o2), _to_channel_first(o3)
 
         o1, o2, o3 = self.proj1(o1).flatten(2).transpose(1, 2), self.proj2(o2).flatten(2).transpose(1,
-                                                                                                        2), self.proj3(
+                                                                                                    2), self.proj3(
             o3)
 
         o = torch.cat([o1, o2, o3], dim=1)
@@ -359,6 +359,10 @@ class LandmarkGatedMamba(nn.Module):
         self.act = nn.SiLU()  # Simple activation for the gate
 
     def forward(self, x_img, x_lm):
+        if x_lm.dim() == 4:  # to be safe from 4D input
+            # Flatten spatial dims: (B, H, W, C) -> (B, H*W, C)
+            x_lm = x_lm.reshape(x_lm.shape[0], -1, x_lm.shape[-1])
+
         B_windows, N, C = x_img.shape
         B_face, N_lm, C_lm = x_lm.shape
 
@@ -366,10 +370,6 @@ class LandmarkGatedMamba(nn.Module):
         num_windows = B_windows // B_face
 
         # 1. Compute Summary (Batch, Dim)
-        if x_lm.dim() == 4:  # to be safe from 4D input
-            # Flatten spatial dims: (B, H, W, C) -> (B, H*W, C)
-            x_lm = x_lm.reshape(x_lm.shape[0], -1, x_lm.shape[-1])
-
         g = x_lm.mean(dim=1)
 
         # 2. Generate Alpha/Beta (Batch, Dim)
