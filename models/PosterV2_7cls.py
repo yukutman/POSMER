@@ -295,10 +295,10 @@ class pyramid_trans_expr2(nn.Module):
 
         self.last_face_conv = nn.Conv2d(in_channels=512, out_channels=256, kernel_size=3, padding=1)
 
-        self.embed_q = nn.Sequential(nn.Conv2d(dims[0], 768, kernel_size=3, stride=2, padding=1),
+        self.proj1 = nn.Sequential(nn.Conv2d(dims[0], 768, kernel_size=3, stride=2, padding=1),
                                      nn.Conv2d(768, 768, kernel_size=3, stride=2, padding=1))
-        self.embed_k = nn.Sequential(nn.Conv2d(dims[1], 768, kernel_size=3, stride=2, padding=1))
-        self.embed_v = PatchEmbed(img_size=14, patch_size=14, in_c=256, embed_dim=768)
+        self.proj2 = nn.Sequential(nn.Conv2d(dims[1], 768, kernel_size=3, stride=2, padding=1))
+        self.proj3 = PatchEmbed(img_size=14, patch_size=14, in_c=256, embed_dim=768)
 
     def forward(self, x):
         x_face = F.interpolate(x, size=112)
@@ -323,8 +323,8 @@ class pyramid_trans_expr2(nn.Module):
 
         o1, o2, o3 = _to_channel_first(o1), _to_channel_first(o2), _to_channel_first(o3)
 
-        o1, o2, o3 = self.embed_q(o1).flatten(2).transpose(1, 2), self.embed_k(o2).flatten(2).transpose(1,
-                                                                                                        2), self.embed_v(
+        o1, o2, o3 = self.proj1(o1).flatten(2).transpose(1, 2), self.proj2(o2).flatten(2).transpose(1,
+                                                                                                        2), self.proj3(
             o3)
 
         o = torch.cat([o1, o2, o3], dim=1)
