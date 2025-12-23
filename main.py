@@ -1,7 +1,7 @@
 import shutil
 import warnings
 from sklearn import metrics
-from sklearn.metrics import confusion_matrix, plot_confusion_matrix
+from sklearn.metrics import confusion_matrix
 warnings.filterwarnings("ignore")
 import torch.utils.data as data
 import os
@@ -27,18 +27,18 @@ now = datetime.datetime.now()
 time_str = now.strftime("[%m-%d]-[%H-%M]-")
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type=str, default=r'/home/Dataset/RAF')
+parser.add_argument('--data', type=str, default=r'archive/DATASET')
 parser.add_argument('--data_type', default='RAF-DB', choices=['RAF-DB', 'AffectNet-7', 'CAER-S'],
                         type=str, help='dataset option')
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model.pth')
 parser.add_argument('--best_checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model_best.pth')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers')
-parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=2, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=144, type=int, metavar='N')
+parser.add_argument('-b', '--batch-size', default=32, type=int, metavar='N')
 parser.add_argument('--optimizer', type=str, default="adam", help='Optimizer, adam or sgd.')
 
-parser.add_argument('--lr', '--learning-rate', default=0.000035, type=float, metavar='LR', dest='lr')
+parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, metavar='LR', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
 parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', dest='weight_decay')
 parser.add_argument('-p', '--print-freq', default=30, type=int, metavar='N', help='print frequency')
@@ -438,7 +438,7 @@ class RecorderMeter1(object):
         plt.grid(True, which='minor', linestyle='-')
         plt.gcf().subplots_adjust(bottom=0.15)
 
-        plot_confusion_matrix(cm_normalized, title='Normalized confusion matrix')
+        #plot_confusion_matrix(cm_normalized, title='Normalized confusion matrix')
         # show confusion matrix
         plt.savefig('./log/confusion_matrix.png', format='png')
         # fig.savefig(save_path, dpi=dpi, bbox_inches='tight')
