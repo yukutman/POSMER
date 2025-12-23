@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from .mobilefacenet import MobileFaceNet
-from .ir50 import Backbone
-from .vit_model import VisionTransformer, PatchEmbed
+from mobilefacenet import MobileFaceNet
+from ir50 import Backbone
+from vit_model import VisionTransformer, PatchEmbed
 from timm.models.layers import trunc_normal_, DropPath
 from thop import profile
 from mamba_ssm import Mamba
@@ -35,6 +35,7 @@ def load_pretrained_weights(model, checkpoint):
     print('load_weight', len(matched_layers))
     return model
 
+
 def window_partition(x, window_size, h_w, w_w):
     """
     Args:
@@ -49,11 +50,13 @@ def window_partition(x, window_size, h_w, w_w):
     windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
     return windows
 
+
 class window(nn.Module):
     def __init__(self, window_size, dim):
         super(window, self).__init__()
         self.window_size = window_size
         self.norm = nn.LayerNorm(dim)
+
     def forward(self, x):
         x = x.permute(0, 2, 3, 1)
         B, H, W, C = x.shape
@@ -64,6 +67,7 @@ class window(nn.Module):
         x_windows = window_partition(x, self.window_size, h_w, w_w)
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)
         return x_windows, shortcut
+
 
 class WindowAttentionGlobal(nn.Module):
     """
@@ -141,6 +145,7 @@ class WindowAttentionGlobal(nn.Module):
         x = self.proj_drop(x)
         return x
 
+
 def _to_channel_last(x):
     """
     Args:
@@ -151,13 +156,16 @@ def _to_channel_last(x):
     """
     return x.permute(0, 2, 3, 1)
 
+
 def _to_channel_first(x):
     return x.permute(0, 3, 1, 2)
+
 
 def _to_query(x, N, num_heads, dim_head):
     B = x.shape[0]
     x = x.reshape(B, 1, N, num_heads, dim_head).permute(0, 1, 3, 2, 4)
     return x
+
 
 class Mlp(nn.Module):
     """
@@ -195,6 +203,7 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
+
 def window_reverse(windows, window_size, H, W, h_w, w_w):
     """
     Args:
@@ -211,6 +220,7 @@ def window_reverse(windows, window_size, H, W, h_w, w_w):
     x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
     return x
 
+
 class feedforward(nn.Module):
     def __init__(self, dim, window_size, mlp_ratio=4., act_layer=nn.GELU, drop=0., drop_path=0., layer_scale=None):
         super(feedforward, self).__init__()
@@ -225,6 +235,7 @@ class feedforward(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=int(dim * mlp_ratio), act_layer=act_layer, drop=drop)
         self.norm = nn.LayerNorm(dim)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+
     def forward(self, attn_windows, shortcut):
         B, H, W, C = shortcut.shape
         h_w = int(torch.div(H, self.window_size).item())
@@ -236,7 +247,8 @@ class feedforward(nn.Module):
 
 
 class pyramid_trans_expr2(nn.Module):
-    def __init__(self, img_size=224, num_classes=7, window_size=[28,14,7], num_heads=[2, 4, 8], dims=[64, 128, 256], embed_dim=768):
+    def __init__(self, img_size=224, num_classes=7, window_size=[28, 14, 7], num_heads=[2, 4, 8], dims=[64, 128, 256],
+                 embed_dim=768):
         super().__init__()
 
         self.img_size = img_size
@@ -255,7 +267,7 @@ class pyramid_trans_expr2(nn.Module):
         for param in self.face_landback.parameters():
             param.requires_grad = False
 
-        self.VIT = VisionTransformer(depth=2, embed_dim=embed_dim)
+        self.BIM = BiMambaClassifier(embed_dim=embed_dim, num_classes=num_classes, depth=2)
 
         self.ir_back = Backbone(50, 0.0, 'ir')
         ir_checkpoint = torch.load(r'pretrain/ir50.pth', map_location=lambda storage, loc: storage)
@@ -290,7 +302,7 @@ class pyramid_trans_expr2(nn.Module):
 
     def forward(self, x):
         x_face = F.interpolate(x, size=112)
-        x_face1 , x_face2, x_face3 = self.face_landback(x_face)
+        x_face1, x_face2, x_face3 = self.face_landback(x_face)
         x_face3 = self.last_face_conv(x_face3)
         x_face1, x_face2, x_face3 = _to_channel_last(x_face1), _to_channel_last(x_face2), _to_channel_last(x_face3)
 
@@ -299,7 +311,7 @@ class pyramid_trans_expr2(nn.Module):
         #             _to_query(x_face3, self.N[2], self.num_heads[2], self.dim_head[2])
 
         x_ir1, x_ir2, x_ir3 = self.ir_back(x)
-    
+
         x_ir1, x_ir2, x_ir3 = self.conv1(x_ir1), self.conv2(x_ir2), self.conv3(x_ir3)
         x_window1, shortcut1 = self.window1(x_ir1)
         x_window2, shortcut2 = self.window2(x_ir2)
@@ -311,13 +323,14 @@ class pyramid_trans_expr2(nn.Module):
 
         o1, o2, o3 = _to_channel_first(o1), _to_channel_first(o2), _to_channel_first(o3)
 
-        o1, o2, o3 = self.embed_q(o1).flatten(2).transpose(1, 2), self.embed_k(o2).flatten(2).transpose(1, 2), self.embed_v(o3)
+        o1, o2, o3 = self.embed_q(o1).flatten(2).transpose(1, 2), self.embed_k(o2).flatten(2).transpose(1,
+                                                                                                        2), self.embed_v(
+            o3)
 
         o = torch.cat([o1, o2, o3], dim=1)
 
-        out = self.VIT(o)
+        out = self.BIM(o)
         return out
-
 
 
 class LandmarkGatedMamba(nn.Module):
@@ -353,7 +366,7 @@ class LandmarkGatedMamba(nn.Module):
         num_windows = B_windows // B_face
 
         # 1. Compute Summary (Batch, Dim)
-        if x_lm.dim() == 4: # to be safe from 4D input
+        if x_lm.dim() == 4:  # to be safe from 4D input
             # Flatten spatial dims: (B, H, W, C) -> (B, H*W, C)
             x_lm = x_lm.reshape(x_lm.shape[0], -1, x_lm.shape[-1])
 
@@ -374,10 +387,53 @@ class LandmarkGatedMamba(nn.Module):
 
         return x_out + x_img
 
+
+class BiMambaClassifier(nn.Module):  # Bi-Directional Mamba Classifier for Head instead of ViT
+    def __init__(self, embed_dim=768, num_classes=7, depth=2, d_state=16):
+        super().__init__()
+
+        # We use a ModuleList to stack multiple Bi-Mamba blocks
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers.append(
+                Mamba(
+                    d_model=embed_dim,
+                    d_state=d_state,
+                    d_conv=4,
+                    expand=2
+                )
+            )
+
+        self.norm_f = nn.LayerNorm(embed_dim)
+        self.head = nn.Linear(embed_dim, num_classes)
+
+    def forward(self, x):
+        # x shape: (Batch, Sequence_Len, Dim)
+
+        for layer in self.layers:
+            # 1. Forward Pass
+            x_fwd = layer(x)
+
+            # 2. Backward Pass
+            # Flip the sequence along dimension 1 (time/sequence dim)
+            x_rev = torch.flip(x, dims=[1])
+            x_bwd = layer(x_rev)
+            x_bwd = torch.flip(x_bwd, dims=[1])  # Flip back to original order
+
+            # 3. Fusion (Add them up)
+            # This creates a "Global Receptive Field"
+            x = x_fwd + x_bwd
+
+        # Global Average Pooling
+        x = x.mean(dim=1)
+
+        x = self.norm_f(x)
+        x = self.head(x)
+        return x
+
+
 def compute_param_flop():
     model = pyramid_trans_expr2()
-    img = torch.rand(size=(1,3,224,224))
+    img = torch.rand(size=(1, 3, 224, 224))
     flops, params = profile(model, inputs=(img,))
-    print(f'flops:{flops/1000**3}G,params:{params/1000**2}M')
-
-
+    print(f'flops:{flops / 1000 ** 3}G,params:{params / 1000 ** 2}M')
