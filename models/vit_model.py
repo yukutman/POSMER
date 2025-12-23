@@ -2,30 +2,20 @@
 original code from rwightman:
 https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
 """
-from functools import partial
+import math
 from collections import OrderedDict
+from functools import partial
 
 import torch
-import torch.nn as nn
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.hub
-from functools import partial
+import torch.hub
+import torch.nn as nn
+from timm.models.layers import DropPath
+from timm.models.vision_transformer import Mlp, Block
+
+
 # import mat
 # from vision_transformer.ir50 import Backbone
-
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.hub
-from functools import partial
-import math
-
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-from timm.models.registry import register_model
-from timm.models.vision_transformer import _cfg, Mlp, Block
 # from .ir50 import Backbone
 
 
