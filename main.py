@@ -20,6 +20,7 @@ import datetime
 from torchsampler import ImbalancedDatasetSampler
 from models.PosterV2_7cls import *
 from models.matrix import plot_confusion_matrix
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -210,116 +211,109 @@ def main():
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
+    # Initialize meters
     losses = AverageMeter('Loss', ':.4f')
     top1 = AverageMeter('Accuracy', ':6.3f')
-    progress = ProgressMeter(len(train_loader),
-                             [losses, top1],
-                             prefix="Epoch: [{}]".format(epoch))
 
-    # switch to train mode
+    # Switch to train mode
     model.train()
 
-    for i, (images, target) in enumerate(train_loader):
-        # print(images.shape)
+    # Wrap the loader with tqdm
+    # desc: Shows "Training Epoch X"
+    # leave=True: Keeps the bar after completion
+    loop = tqdm(train_loader, desc=f'Training Epoch {epoch + 1}/{args.epochs}', leave=True)
+
+    for i, (images, target) in enumerate(loop):
         images = images.cuda()
         target = target.cuda()
 
-        # compute output
+        # SAM Step 1: Forward & Backward
         output = model(images)
         loss = criterion(output, target)
 
-        # measure accuracy and record loss
+        # Metrics update (Record logic)
         acc1, _ = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), images.size(0))
         top1.update(acc1[0], images.size(0))
 
-        # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
-        # optimizer.step()
         optimizer.first_step(zero_grad=True)
-        images = images.cuda()
-        target = target.cuda()
 
-        # compute output
+        # SAM Step 2: Forward & Backward (Sharpness check)
         output = model(images)
         loss = criterion(output, target)
 
-        # measure accuracy and record loss
+        # Metrics update (Record logic)
         acc1, _ = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), images.size(0))
         top1.update(acc1[0], images.size(0))
 
-        # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.second_step(zero_grad=True)
 
-        # print loss and accuracy
-        if i % args.print_freq == 0:
-            progress.display(i)
+        # Update the progress bar with current Loss and Accuracy
+        loop.set_postfix(loss=losses.avg, acc=top1.avg.item())
 
+    # Return final averages
     return top1.avg, losses.avg
 
 
 def validate(val_loader, model, criterion, args):
     losses = AverageMeter('Loss', ':.4f')
     top1 = AverageMeter('Accuracy', ':6.3f')
-    progress = ProgressMeter(len(val_loader),
-                             [losses, top1],
-                             prefix='Test: ')
 
-    # switch to evaluate mode
+    # Create lists to hold ALL results (unlike original code)
+    all_preds = []
+    all_targets = []
+
     model.eval()
-    D = [[0, 0, 0, 0, 0, 0, 0],
-         [0, 0, 0, 0, 0, 0, 0],
-         [0, 0, 0, 0, 0, 0, 0],
-         [0, 0, 0, 0, 0, 0, 0],
-         [0, 0, 0, 0, 0, 0, 0],
-         [0, 0, 0, 0, 0, 0, 0],
-         [0, 0, 0, 0, 0, 0, 0]]
+
+    # Initialize your manual matrix D
+    D = np.zeros((7, 7))
+
+    loop = tqdm(val_loader, desc='Validating', leave=True)
+
     with torch.no_grad():
-        for i, (images, target) in enumerate(val_loader):
+        for images, target in loop:
             images = images.cuda()
             target = target.cuda()
+
             output = model(images)
             loss = criterion(output, target)
 
-            # measure accuracy and record loss
             acc, _ = accuracy(output, target, topk=(1, 5))
             losses.update(loss.item(), images.size(0))
             top1.update(acc[0], images.size(0))
 
-            topk = (1,)
-            # """Computes the accuracy over the k top predictions for the specified values of k"""
-            with torch.no_grad():
-                maxk = max(topk)
-                # batch_size = target.size(0)
-                _, pred = output.topk(maxk, 1, True, True)
-                pred = pred.t()
+            # Confusion Matrix Logic
+            _, pred = output.topk(1, 1, True, True)
+            pred = pred.t()
 
-            output = pred
-            target = target.squeeze().cpu().numpy()
-            output = output.squeeze().cpu().numpy()
+            # Collect this batch's results into final lists
+            all_preds.append(pred.cpu().numpy().flatten())
+            all_targets.append(target.cpu().numpy().flatten())
 
-            im_re_label = np.array(target)
-            im_pre_label = np.array(output)
-            y_ture = im_re_label.flatten()
-            im_re_label.transpose()
-            y_pred = im_pre_label.flatten()
-            im_pre_label.transpose()
-
-            C = metrics.confusion_matrix(y_ture, y_pred, labels=[0, 1, 2, 3, 4, 5, 6])
+            # Update manual matrix D
+            y_true_batch = target.cpu().numpy().flatten()
+            y_pred_batch = pred.cpu().numpy().flatten()
+            C = metrics.confusion_matrix(y_true_batch, y_pred_batch, labels=[0, 1, 2, 3, 4, 5, 6])
             D += C
 
-            if i % args.print_freq == 0:
-                progress.display(i)
+            loop.set_postfix(val_loss=losses.avg, val_acc=top1.avg.item())
 
-        print(' **** Accuracy {top1.avg:.3f} *** '.format(top1=top1))
-        with open('./log/' + time_str + 'log.txt', 'a') as f:
-            f.write(' * Accuracy {top1.avg:.3f}'.format(top1=top1) + '\n')
-    print(D)
-    return top1.avg, losses.avg, output, target, D
+    # Concatenate all batches into one giant array
+    final_output = np.concatenate(all_preds)
+    final_target = np.concatenate(all_targets)
+
+    print(f' * Final Validation Accuracy: {top1.avg:.3f}')
+
+    with open('./log/' + time_str + 'log.txt', 'a') as f:
+        f.write(' * Accuracy {top1.avg:.3f}'.format(top1=top1) + '\n')
+
+    # Return the FULL lists (unlike original code)
+    return top1.avg, losses.avg, final_output, final_target, D
 
 
 def save_checkpoint(state, is_best, args):
@@ -352,27 +346,6 @@ class AverageMeter(object):
     def __str__(self):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return fmtstr.format(**self.__dict__)
-
-
-class ProgressMeter(object):
-    def __init__(self, num_batches, meters, prefix=""):
-        self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
-        self.meters = meters
-        self.prefix = prefix
-
-    def display(self, batch):
-        entries = [self.prefix + self.batch_fmtstr.format(batch)]
-        entries += [str(meter) for meter in self.meters]
-        print_txt = '\t'.join(entries)
-        print(print_txt)
-        txt_name = './log/' + time_str + 'log.txt'
-        with open(txt_name, 'a') as f:
-            f.write(print_txt + '\n')
-
-    def _get_batch_fmtstr(self, num_batches):
-        num_digits = len(str(num_batches // 1))
-        fmt = '{:' + str(num_digits) + 'd}'
-        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
 def accuracy(output, target, topk=(1,)):
@@ -409,7 +382,7 @@ class RecorderMeter1(object):
         self.y_pred = output
         self.y_true = target
 
-    def plot_confusion_matrix(self, cm, title='Confusion Matrix', cmap="binary"): # cmap="" works for matplotlib 3.10.8
+    def plot_confusion_matrix(self, cm, title='Confusion Matrix', cmap="binary"):  # cmap="" works for matplotlib 3.10.8
         plt.imshow(cm, interpolation='nearest', cmap=cmap)
         y_true = self.y_true
         y_pred = self.y_pred
@@ -455,7 +428,6 @@ class RecorderMeter1(object):
         im_re_label = np.array(target)
         im_pre_label = np.array(output)
         y_ture = im_re_label.flatten()
-        # im_re_label.transpose()
         y_pred = im_pre_label.flatten()
         im_pre_label.transpose()
 
