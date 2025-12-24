@@ -19,6 +19,7 @@ import numpy as np
 import datetime
 import time
 from torchsampler import ImbalancedDatasetSampler
+from tqdm import tqdm  # [NEW] Import tqdm for progress bars
 
 # --- Import from the new Mamba-based PosterV2 file ---
 from models.PosterV2_7cls import *
@@ -36,12 +37,12 @@ parser.add_argument('--data_type', default='RAF-DB', choices=['RAF-DB', 'AffectN
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model.pth')
 parser.add_argument('--best_checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model_best.pth')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers')
-parser.add_argument('--epochs', default=2, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=10, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=64, type=int, metavar='N')
 parser.add_argument('--optimizer', type=str, default="adam", help='Optimizer, adam or sgd.')
 
-parser.add_argument('--lr', '--learning-rate', default=0.00007, type=float, metavar='LR', dest='lr')
+parser.add_argument('--lr', '--learning-rate', default=3.5e-5, type=float, metavar='LR', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
 parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', dest='weight_decay')
 parser.add_argument('-p', '--print-freq', default=24, type=int, metavar='N', help='print frequency')
@@ -172,7 +173,12 @@ def main():
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
         current_learning_rate = optimizer.state_dict()['param_groups'][0]['lr']
-        print(f'Epoch: {epoch + 1} | Learning rate: {current_learning_rate}')
+
+        # [PRETTIER] Use a separator line
+        print(f'\n{"=" * 40}')
+        print(f'Epoch: {epoch + 1}/{args.epochs} | LR: {current_learning_rate:.2e}')
+        print(f'{"=" * 40}')
+
         txt_name = './log/' + time_str + 'log.txt'
         with open(txt_name, 'a') as f:
             f.write(f'Epoch: {epoch + 1} | Learning rate: {current_learning_rate}\n')
@@ -204,7 +210,7 @@ def main():
 
         if is_best:
             matrix = D
-            print('New Best Matrix Found')
+            print('>>> New Best Model Saved! <<<')
 
         with open(txt_name, 'a') as f:
             f.write('Current best accuracy: ' + str(best_acc.item()) + '\n')
@@ -220,13 +226,19 @@ def main():
 def train(train_loader, model, criterion, optimizer, epoch, args):
     losses = AverageMeter('Loss', ':.4f')
     top1 = AverageMeter('Accuracy', ':6.3f')
+
+    # [PRETTIER] We define the ProgressMeter but only for logging to file, not printing
     progress = ProgressMeter(len(train_loader),
                              [losses, top1],
                              prefix="Epoch: [{}]".format(epoch))
 
     model.train()
 
-    for i, (images, target) in enumerate(train_loader):
+    # [PRETTIER] TQDM Progress Bar
+    pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Train Epoch {epoch + 1}", unit="batch",
+                leave=True)
+
+    for i, (images, target) in pbar:
         images = images.cuda()
         target = target.cuda()
 
@@ -257,8 +269,12 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         optimizer.second_step(zero_grad=True)
 
+        # [PRETTIER] Update the progress bar with metrics
+        pbar.set_postfix({'Loss': f'{losses.avg:.4f}', 'Acc': f'{top1.avg.item():.2f}%'})
+
         if i % args.print_freq == 0:
-            progress.display(i)
+            # We only write to file to avoid messing up the bar
+            progress.write_to_log(i)
 
     return top1.avg, losses.avg
 
@@ -266,6 +282,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 def validate(val_loader, model, criterion, args):
     losses = AverageMeter('Loss', ':.4f')
     top1 = AverageMeter('Accuracy', ':6.3f')
+
+    # [PRETTIER] Log file only
     progress = ProgressMeter(len(val_loader),
                              [losses, top1],
                              prefix='Test: ')
@@ -275,8 +293,11 @@ def validate(val_loader, model, criterion, args):
     # [FIXED] Initialize with numpy zeros
     D = np.zeros((7, 7))
 
+    # [PRETTIER] TQDM for Validation
+    pbar = tqdm(enumerate(val_loader), total=len(val_loader), desc="Validation", unit="batch", leave=True)
+
     with torch.no_grad():
-        for i, (images, target) in enumerate(val_loader):
+        for i, (images, target) in pbar:
             images = images.cuda()
             target = target.cuda()
             output = model(images)
@@ -305,10 +326,14 @@ def validate(val_loader, model, criterion, args):
             C = metrics.confusion_matrix(y_ture, y_pred, labels=[0, 1, 2, 3, 4, 5, 6])
             D += C
 
-            if i % args.print_freq == 0:
-                progress.display(i)
+            # [PRETTIER] Update bar
+            pbar.set_postfix({'Loss': f'{losses.avg:.4f}', 'Acc': f'{top1.avg.item():.2f}%'})
 
-        print(' **** Accuracy {top1.avg:.3f} *** '.format(top1=top1))
+            if i % args.print_freq == 0:
+                progress.write_to_log(i)
+
+        # Print final results nicely
+        print(f' * Final Val Accuracy: {top1.avg:.3f}%')
         with open('./log/' + time_str + 'log.txt', 'a') as f:
             f.write(' * Accuracy {top1.avg:.3f}'.format(top1=top1) + '\n')
 
@@ -354,10 +379,21 @@ class ProgressMeter(object):
         self.prefix = prefix
 
     def display(self, batch):
+        """Standard display that prints AND writes to file"""
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
         print_txt = '\t'.join(entries)
         print(print_txt)
+        txt_name = './log/' + time_str + 'log.txt'
+        with open(txt_name, 'a') as f:
+            f.write(print_txt + '\n')
+
+    def write_to_log(self, batch):
+        """ [PRETTIER] ONLY writes to file, does not print to console"""
+        entries = [self.prefix + self.batch_fmtstr.format(batch)]
+        entries += [str(meter) for meter in self.meters]
+        print_txt = '\t'.join(entries)
+        # NO PRINT HERE
         txt_name = './log/' + time_str + 'log.txt'
         with open(txt_name, 'a') as f:
             f.write(print_txt + '\n')
