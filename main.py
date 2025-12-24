@@ -1,26 +1,23 @@
-import shutil
-import warnings
-from sklearn import metrics
-from sklearn.metrics import confusion_matrix
-import torch.utils.data as data
-import os
 import argparse
-from sklearn.metrics import f1_score, confusion_matrix
-from data_preprocessing.sam import SAM
-import torch.nn.parallel
+import datetime
+import os
+import time
+import warnings
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch.backends.cudnn as cudnn
+import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
-import matplotlib.pyplot as plt
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-import numpy as np
-import datetime
-import time
+from sklearn import metrics
 from torchsampler import ImbalancedDatasetSampler
 from tqdm import tqdm  # [NEW] Import tqdm for progress bars
 
+from data_preprocessing.sam import SAM
 # --- Import from the new Mamba-based PosterV2 file ---
 from models.PosterV2_7cls import *
 
@@ -100,7 +97,7 @@ def main():
 
     # Data loading code
     traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'valid')
+    testdir = os.path.join(args.data, 'test')
 
     # Ensure log directories exist
     if not os.path.exists('./log'):
@@ -141,7 +138,7 @@ def main():
                                                        num_workers=args.workers,
                                                        pin_memory=True)
 
-    test_dataset = datasets.ImageFolder(valdir,
+    test_dataset = datasets.ImageFolder(testdir,
                                         transforms.Compose([transforms.Resize((224, 224)),
                                                             transforms.ToTensor(),
                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -224,58 +221,52 @@ def main():
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
+    # Initialize meters
     losses = AverageMeter('Loss', ':.4f')
     top1 = AverageMeter('Accuracy', ':6.3f')
 
-    # [PRETTIER] We define the ProgressMeter but only for logging to file, not printing
-    progress = ProgressMeter(len(train_loader),
-                             [losses, top1],
-                             prefix="Epoch: [{}]".format(epoch))
-
+    # Switch to train mode
     model.train()
 
-    # [PRETTIER] TQDM Progress Bar
-    pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Train Epoch {epoch + 1}", unit="batch",
-                leave=True)
+    # Wrap the loader with tqdm
+    # desc: Shows "Training Epoch X"
+    # leave=True: Keeps the bar after completion
+    loop = tqdm(train_loader, desc=f'Training Epoch {epoch + 1}/{args.epochs}', leave=True)
 
-    for i, (images, target) in pbar:
+    for i, (images, target) in enumerate(loop):
         images = images.cuda()
         target = target.cuda()
 
-        # --- Step 1 ---
+        # SAM Step 1: Forward & Backward
         output = model(images)
         loss = criterion(output, target)
 
+        # Metrics update (Record logic)
         acc1, _ = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), images.size(0))
         top1.update(acc1[0], images.size(0))
 
         optimizer.zero_grad()
         loss.backward()
-
-        # [NEW] Clip Gradients for Stability
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
-
         optimizer.first_step(zero_grad=True)
 
-        # --- Step 2 (SAM) ---
+        # SAM Step 2: Forward & Backward (Sharpness check)
         output = model(images)
         loss = criterion(output, target)
 
+        # Metrics update (Record logic)
+        acc1, _ = accuracy(output, target, topk=(1, 5))
+        losses.update(loss.item(), images.size(0))
+        top1.update(acc1[0], images.size(0))
+
+        optimizer.zero_grad()
         loss.backward()
-
-        # [NEW] Clip Gradients again
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
-
         optimizer.second_step(zero_grad=True)
 
-        # [PRETTIER] Update the progress bar with metrics
-        pbar.set_postfix({'Loss': f'{losses.avg:.4f}', 'Acc': f'{top1.avg.item():.2f}%'})
+        # Update the progress bar with current Loss and Accuracy
+        loop.set_postfix(loss=losses.avg, acc=top1.avg.item())
 
-        if i % args.print_freq == 0:
-            # We only write to file to avoid messing up the bar
-            progress.write_to_log(i)
-
+    # Return final averages
     return top1.avg, losses.avg
 
 
@@ -283,23 +274,22 @@ def validate(val_loader, model, criterion, args):
     losses = AverageMeter('Loss', ':.4f')
     top1 = AverageMeter('Accuracy', ':6.3f')
 
-    # [PRETTIER] Log file only
-    progress = ProgressMeter(len(val_loader),
-                             [losses, top1],
-                             prefix='Test: ')
+    # Create lists to hold ALL results (unlike original code)
+    all_preds = []
+    all_targets = []
 
     model.eval()
 
-    # [FIXED] Initialize with numpy zeros
+    # Initialize your manual matrix D
     D = np.zeros((7, 7))
 
-    # [PRETTIER] TQDM for Validation
-    pbar = tqdm(enumerate(val_loader), total=len(val_loader), desc="Validation", unit="batch", leave=True)
+    loop = tqdm(val_loader, desc='Validating', leave=True)
 
     with torch.no_grad():
-        for i, (images, target) in pbar:
+        for images, target in loop:
             images = images.cuda()
             target = target.cuda()
+
             output = model(images)
             loss = criterion(output, target)
 
@@ -307,37 +297,33 @@ def validate(val_loader, model, criterion, args):
             losses.update(loss.item(), images.size(0))
             top1.update(acc[0], images.size(0))
 
-            topk = (1,)
-            with torch.no_grad():
-                maxk = max(topk)
-                _, pred = output.topk(maxk, 1, True, True)
-                pred = pred.t()
+            # Confusion Matrix Logic
+            _, pred = output.topk(1, 1, True, True)
+            pred = pred.t()
 
-            output = pred
-            target = target.squeeze().cpu().numpy()
-            output = output.squeeze().cpu().numpy()
+            # Collect this batch's results into final lists
+            all_preds.append(pred.cpu().numpy().flatten())
+            all_targets.append(target.cpu().numpy().flatten())
 
-            im_re_label = np.array(target)
-            im_pre_label = np.array(output)
-            y_ture = im_re_label.flatten()
-            y_pred = im_pre_label.flatten()
-
-            # [FIXED] Confusion Matrix Accumulation
-            C = metrics.confusion_matrix(y_ture, y_pred, labels=[0, 1, 2, 3, 4, 5, 6])
+            # Update manual matrix D
+            y_true_batch = target.cpu().numpy().flatten()
+            y_pred_batch = pred.cpu().numpy().flatten()
+            C = metrics.confusion_matrix(y_true_batch, y_pred_batch, labels=[0, 1, 2, 3, 4, 5, 6])
             D += C
 
-            # [PRETTIER] Update bar
-            pbar.set_postfix({'Loss': f'{losses.avg:.4f}', 'Acc': f'{top1.avg.item():.2f}%'})
+            loop.set_postfix(val_loss=losses.avg, val_acc=top1.avg.item())
 
-            if i % args.print_freq == 0:
-                progress.write_to_log(i)
+    # Concatenate all batches into one giant array
+    final_output = np.concatenate(all_preds)
+    final_target = np.concatenate(all_targets)
 
-        # Print final results nicely
-        print(f' * Final Val Accuracy: {top1.avg:.3f}%')
-        with open('./log/' + time_str + 'log.txt', 'a') as f:
-            f.write(' * Accuracy {top1.avg:.3f}'.format(top1=top1) + '\n')
+    print(f' * Final Validation Accuracy: {top1.avg:.3f}')
 
-    return top1.avg, losses.avg, output, target, D
+    with open('./log/' + time_str + 'log.txt', 'a') as f:
+        f.write(' * Accuracy {top1.avg:.3f}'.format(top1=top1) + '\n')
+
+    # Return the FULL lists (unlike original code)
+    return top1.avg, losses.avg, final_output, final_target, D
 
 
 def save_checkpoint(state, is_best, args):
