@@ -11,26 +11,16 @@ class Mambassm(nn.Module):
         self.d_inner = d_inner
         self.d_state = d_state
         self.dt_rank = dt_rank if dt_rank else d_inner // 16
-        
+
         self.x_proj = nn.Linear(d_inner, self.dt_rank + 2 * d_state, bias=False)
         self.dt_proj = nn.Linear(self.dt_rank, d_inner, bias=True)
-        
+
         A = torch.arange(1, d_state + 1, dtype=torch.float32).repeat(d_inner, 1)
         self.A_log = nn.Parameter(torch.log(A))
         self.D = nn.Parameter(torch.ones(d_inner))
 
     def forward(self, x):
-        # x: (Batch, Seq_Len, d_inner)
-
-        # 1. Forward Scan
-        out_forward = self._scan(x)
-
-        # 2. Backward Scan (Flip sequence, scan, flip back)
-        x_flip = torch.flip(x, dims=[1])
-        out_backward = torch.flip(self._scan(x_flip), dims=[1])
-
-        # 3. Combine (Average)
-        return (out_forward + out_backward) / 2
+        return self._scan(x)
 
     def _scan(self, x):
         """Helper to run the actual selective scan logic"""
@@ -64,13 +54,13 @@ class ViMBlock(nn.Module):
         self.dim = dim
         self.d_inner = dim * expand
         self.norm = nn.LayerNorm(dim)
-        
+
         self.in_proj = nn.Linear(dim, self.d_inner * 2, bias=False)
         self.conv1d = nn.Conv1d(
-            in_channels=self.d_inner, 
-            out_channels=self.d_inner, 
-            kernel_size=4, 
-            groups=self.d_inner, 
+            in_channels=self.d_inner,
+            out_channels=self.d_inner,
+            kernel_size=4,
+            groups=self.d_inner,
             padding=3
         )
         self.act = nn.SiLU()
@@ -83,16 +73,16 @@ class ViMBlock(nn.Module):
         x = self.norm(x)
         x_and_res = self.in_proj(x)
         (x, res) = x_and_res.split(split_size=[self.d_inner, self.d_inner], dim=-1)
-        
+
         x = x.transpose(1, 2)
         x = self.conv1d(x)[:, :, :x.shape[2]]
         x = x.transpose(1, 2)
-        
+
         x = self.act(x)
         x = self.mixer(x)
         x = x * self.act(res)
         x = self.out_proj(x)
-        
+
         return residual + self.drop_path(x)
 
 # --- 3. Helpers ---
@@ -100,7 +90,7 @@ class PatchEmbed(nn.Module):
     """ Used in PosterV2 to project the pyramid features """
     def __init__(self, img_size=14, patch_size=16, in_c=256, embed_dim=768):
         super().__init__()
-        self.proj = nn.Conv2d(in_c, embed_dim, kernel_size=1) 
+        self.proj = nn.Conv2d(in_c, embed_dim, kernel_size=1)
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x):
@@ -110,31 +100,31 @@ class PatchEmbed(nn.Module):
 
 # --- 4. The Backbone (VisionMamba) ---
 class VisionMamba(nn.Module):
-    def __init__(self, 
-                 embed_dim=768, 
-                 depth=2, 
-                 num_classes=7, 
-                 d_state=16, 
-                 expand=2, 
+    def __init__(self,
+                 embed_dim=768,
+                 depth=2,
+                 num_classes=7,
+                 d_state=16,
+                 expand=2,
                  drop_path_rate=0.1,
-                 **kwargs): 
+                 **kwargs):
         super().__init__()
-        
+
         self.num_classes = num_classes
         self.embed_dim = embed_dim
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
-        
+
         self.blocks = nn.Sequential(*[
             ViMBlock(
-                dim=embed_dim, 
-                d_state=d_state, 
-                expand=expand, 
+                dim=embed_dim,
+                d_state=d_state,
+                expand=expand,
                 drop_path=dpr[i]
             )
             for i in range(depth)
         ])
-        
+
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, num_classes)
         self.apply(self._init_weights)
