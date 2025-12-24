@@ -36,12 +36,12 @@ parser.add_argument('--data_type', default='RAF-DB', choices=['RAF-DB', 'AffectN
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model.pth')
 parser.add_argument('--best_checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model_best.pth')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers')
-parser.add_argument('--epochs', default=2, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=1, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=32, type=int, metavar='N')
 parser.add_argument('--optimizer', type=str, default="adam", help='Optimizer, adam or sgd.')
 
-parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, metavar='LR', dest='lr')
+parser.add_argument('--lr', '--learning-rate', default=3.5e-5, type=float, metavar='LR', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
 parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, metavar='W', dest='weight_decay')
 parser.add_argument('-p', '--print-freq', default=30, type=int, metavar='N', help='print frequency')
@@ -97,7 +97,7 @@ def main():
     # Data loading code
     traindir = os.path.join(args.data, 'train')
 
-    valdir = os.path.join(args.data, 'valid')
+    valdir = os.path.join(args.data, 'test')
 
     if args.evaluate is None:
 
