@@ -51,18 +51,3 @@ def plot_confusion_matrix(cm, classes,
     plt.ylabel('True Label', fontsize=12)
     plt.xlabel('Predicted Label', fontsize=12)
     plt.show()
-
-
-cnf_matrix = np.array([[299, 6, 5, 3, 1, 4, 11],
-                       [9, 51, 0, 2, 8, 2, 2],
-                       [2, 1, 120, 6, 13, 9, 9],
-                       [5, 1, 7, 1148, 2, 4, 18],
-                       [0, 0, 9, 4, 442, 1, 22],
-                       [2, 0, 7, 3, 0, 145, 5],
-                       [10, 0, 6, 11, 29, 0, 624]])
-
-
-
-plt.figure(dpi=200)
-plot_confusion_matrix(cnf_matrix, classes=class_names, normalize=True,
-                      title=None)
