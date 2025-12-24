@@ -1,12 +1,11 @@
-import shutil
 import warnings
-from sklearn import metrics
-from sklearn.metrics import confusion_matrix
+
 warnings.filterwarnings("ignore")
-import torch.utils.data as data
+
+from sklearn import metrics
 import os
 import argparse
-from sklearn.metrics import f1_score, confusion_matrix
+from sklearn.metrics import confusion_matrix
 from data_preprocessing.sam import SAM
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
@@ -20,16 +19,19 @@ import numpy as np
 import datetime
 from torchsampler import ImbalancedDatasetSampler
 from models.PosterV2_7cls import *
+from models.matrix import plot_confusion_matrix
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 now = datetime.datetime.now()
 time_str = now.strftime("[%m-%d]-[%H-%M]-")
 
+class_names = ["SU", 'FE', 'AN', 'HA', 'SA', 'DI', 'NE']
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default=r'archive/DATASET')
 parser.add_argument('--data_type', default='RAF-DB', choices=['RAF-DB', 'AffectNet-7', 'CAER-S'],
-                        type=str, help='dataset option')
+                    type=str, help='dataset option')
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model.pth')
 parser.add_argument('--best_checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model_best.pth')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers')
@@ -113,7 +115,8 @@ def main():
                                                                      transforms.ToTensor(),
                                                                      transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                                           std=[0.229, 0.224, 0.225]),
-                                                                     transforms.RandomErasing(p=1, scale=(0.05, 0.05))]))
+                                                                     transforms.RandomErasing(p=1,
+                                                                                              scale=(0.05, 0.05))]))
 
         if args.data_type == 'AffectNet-7':
 
@@ -138,7 +141,6 @@ def main():
                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                                  std=[0.229, 0.224, 0.225]),
                                                             ]))
-
 
     val_loader = torch.utils.data.DataLoader(test_dataset,
                                              batch_size=args.batch_size,
@@ -184,7 +186,7 @@ def main():
         curve_name = time_str + 'cnn.png'
         recorder.plot_curve(os.path.join('./log/', curve_name))
 
-        # remember best acc and save checkpoint
+        # remember the best acc and save checkpoint
         is_best = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
 
@@ -319,11 +321,13 @@ def validate(val_loader, model, criterion, args):
     print(D)
     return top1.avg, losses.avg, output, target, D
 
+
 def save_checkpoint(state, is_best, args):
     torch.save(state, args.checkpoint_path)
     if is_best:
         best_state = state.pop('optimizer')
         torch.save(best_state, args.best_checkpoint_path)
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -405,7 +409,7 @@ class RecorderMeter1(object):
         self.y_pred = output
         self.y_true = target
 
-    def plot_confusion_matrix(self, cm, title='Confusion Matrix', cmap=plt.cm.binary):
+    def plot_confusion_matrix(self, cm, title='Confusion Matrix', cmap="binary"): # cmap="" works for matplotlib 3.10.8
         plt.imshow(cm, interpolation='nearest', cmap=cmap)
         y_true = self.y_true
         y_pred = self.y_pred
@@ -438,10 +442,10 @@ class RecorderMeter1(object):
         plt.grid(True, which='minor', linestyle='-')
         plt.gcf().subplots_adjust(bottom=0.15)
 
-        #plot_confusion_matrix(cm_normalized, title='Normalized confusion matrix')
+        plot_confusion_matrix(cm_normalized, title='Normalized confusion matrix', classes=class_names)
+
         # show confusion matrix
         plt.savefig('./log/confusion_matrix.png', format='png')
-        # fig.savefig(save_path, dpi=dpi, bbox_inches='tight')
         print('Saved figure')
         plt.show()
 
@@ -454,6 +458,7 @@ class RecorderMeter1(object):
         # im_re_label.transpose()
         y_pred = im_pre_label.flatten()
         im_pre_label.transpose()
+
 
 class RecorderMeter(object):
     """Computes and stores the minimum loss value and its epoch index"""

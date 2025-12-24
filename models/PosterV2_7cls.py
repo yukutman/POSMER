@@ -3,10 +3,36 @@ import torch.nn as nn
 from torch.nn import functional as F
 from models.mobilefacenet import MobileFaceNet
 from models.ir50 import Backbone
-from models.vit_model import VisionTransformer, PatchEmbed
-from timm.models.layers import trunc_normal_, DropPath
+from timm.models.layers import DropPath
 from thop import profile
 from mamba_ssm import Mamba
+
+
+class PatchEmbed(nn.Module):
+    """
+    2D Image to Patch Embedding
+    """
+
+    def __init__(self, img_size=14, patch_size=16, in_c=256, embed_dim=768, norm_layer=None):
+        super().__init__()
+        img_size = (img_size, img_size)
+        patch_size = (patch_size, patch_size)
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
+        self.num_patches = self.grid_size[0] * self.grid_size[1]
+
+        self.proj = nn.Conv2d(256, 768, kernel_size=1)
+        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+
+        # flatten: [B, C, H, W] -> [B, C, HW]
+        # transpose: [B, C, HW] -> [B, HW, C]
+        x = self.proj(x).flatten(2).transpose(1, 2)
+        x = self.norm(x)
+        return x
 
 
 def load_pretrained_weights(model, checkpoint):
@@ -69,83 +95,6 @@ class window(nn.Module):
         return x_windows, shortcut
 
 
-class WindowAttentionGlobal(nn.Module):
-    """
-    Global window attention based on: "Hatamizadeh et al.,
-    Global Context Vision Transformers <https://arxiv.org/abs/2206.09959>"
-    """
-
-    def __init__(self,
-                 dim,
-                 num_heads,
-                 window_size,
-                 qkv_bias=True,
-                 qk_scale=None,
-                 attn_drop=0.,
-                 proj_drop=0.,
-                 ):
-        """
-        Args:
-            dim: feature size dimension.
-            num_heads: number of attention head.
-            window_size: window size.
-            qkv_bias: bool argument for query, key, value learnable bias.
-            qk_scale: bool argument to scaling query, key.
-            attn_drop: attention dropout rate.
-            proj_drop: output dropout rate.
-        """
-
-        super().__init__()
-        window_size = (window_size, window_size)
-        self.window_size = window_size
-        self.num_heads = num_heads
-        head_dim = torch.div(dim, num_heads)
-        self.scale = qk_scale or head_dim ** -0.5
-        self.relative_position_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads))
-        coords_h = torch.arange(self.window_size[0])
-        coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))
-        coords_flatten = torch.flatten(coords, 1)
-        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
-        relative_coords = relative_coords.permute(1, 2, 0).contiguous()
-        relative_coords[:, :, 0] += self.window_size[0] - 1
-        relative_coords[:, :, 1] += self.window_size[1] - 1
-        relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
-        relative_position_index = relative_coords.sum(-1)
-        self.register_buffer("relative_position_index", relative_position_index)
-        self.qkv = nn.Linear(dim, dim * 2, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-        trunc_normal_(self.relative_position_bias_table, std=.02)
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, x, q_global):
-        # print(f'q_global.shape:{q_global.shape}')
-        # print(f'x.shape:{x.shape}')
-        B_, N, C = x.shape
-        B = q_global.shape[0]
-        head_dim = int(torch.div(C, self.num_heads).item())
-        B_dim = int(torch.div(B_, B).item())
-        kv = self.qkv(x).reshape(B_, N, 2, self.num_heads, head_dim).permute(2, 0, 3, 1, 4)
-        k, v = kv[0], kv[1]
-        q_global = q_global.repeat(1, B_dim, 1, 1, 1)
-        q = q_global.reshape(B_, self.num_heads, N, head_dim)
-        q = q * self.scale
-        attn = (q @ k.transpose(-2, -1))
-        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
-            self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)
-        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
-        attn = attn + relative_position_bias.unsqueeze(0)
-        attn = self.softmax(attn)
-        attn = self.attn_drop(attn)
-        x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-
 def _to_channel_last(x):
     """
     Args:
@@ -159,12 +108,6 @@ def _to_channel_last(x):
 
 def _to_channel_first(x):
     return x.permute(0, 3, 1, 2)
-
-
-def _to_query(x, N, num_heads, dim_head):
-    B = x.shape[0]
-    x = x.reshape(B, 1, N, num_heads, dim_head).permute(0, 1, 3, 2, 4)
-    return x
 
 
 class Mlp(nn.Module):
@@ -274,21 +217,21 @@ class pyramid_trans_expr2(nn.Module):
 
         self.ir_back = load_pretrained_weights(self.ir_back, ir_checkpoint)
 
-        # self.attn1 = WindowAttentionGlobal(dim=dims[0], num_heads=num_heads[0], window_size=window_size[0])
-        # self.attn2 = WindowAttentionGlobal(dim=dims[1], num_heads=num_heads[1], window_size=window_size[1])
-        # self.attn3 = WindowAttentionGlobal(dim=dims[2], num_heads=num_heads[2], window_size=window_size[2])
         # change with LandmarkGatedMamba instead of WindowAttentionGlobal
         self.attn1 = LandmarkGatedMamba(dim=dims[0])
         self.attn2 = LandmarkGatedMamba(dim=dims[1])
         self.attn3 = LandmarkGatedMamba(dim=dims[2])
+
         self.window1 = window(window_size=window_size[0], dim=dims[0])
         self.window2 = window(window_size=window_size[1], dim=dims[1])
         self.window3 = window(window_size=window_size[2], dim=dims[2])
+
         self.conv1 = nn.Conv2d(in_channels=dims[0], out_channels=dims[0], kernel_size=3, stride=2, padding=1)
         self.conv2 = nn.Conv2d(in_channels=dims[1], out_channels=dims[1], kernel_size=3, stride=2, padding=1)
         self.conv3 = nn.Conv2d(in_channels=dims[2], out_channels=dims[2], kernel_size=3, stride=2, padding=1)
 
         dpr = [x.item() for x in torch.linspace(0, 0.5, 5)]
+
         self.ffn1 = feedforward(dim=dims[0], window_size=window_size[0], layer_scale=1e-5, drop_path=dpr[0])
         self.ffn2 = feedforward(dim=dims[1], window_size=window_size[1], layer_scale=1e-5, drop_path=dpr[1])
         self.ffn3 = feedforward(dim=dims[2], window_size=window_size[2], layer_scale=1e-5, drop_path=dpr[2])
@@ -305,10 +248,6 @@ class pyramid_trans_expr2(nn.Module):
         x_face1, x_face2, x_face3 = self.face_landback(x_face)
         x_face3 = self.last_face_conv(x_face3)
         x_face1, x_face2, x_face3 = _to_channel_last(x_face1), _to_channel_last(x_face2), _to_channel_last(x_face3)
-
-        # q1, q2, q3 = _to_query(x_face1, self.N[0], self.num_heads[0], self.dim_head[0]), \
-        #             _to_query(x_face2, self.N[1], self.num_heads[1], self.dim_head[1]), \
-        #             _to_query(x_face3, self.N[2], self.num_heads[2], self.dim_head[2])
 
         x_ir1, x_ir2, x_ir3 = self.ir_back(x)
 
