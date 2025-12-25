@@ -1,15 +1,11 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from timm.models.layers import trunc_normal_
 
-# --- Imports from your project ---
 from .mobilefacenet import MobileFaceNet
 from .ir50 import Backbone
 
-# IMPORT your modular Mamba classes from vim_model.py
-# We import ViMBlock to replace the high-level Mamba library
-from .vim_model import VisionMamba, PatchEmbed, ViMBlock, Mambassm
+from .vim_model import PatchEmbed, ViMBlock, Mambassm
 
 
 def load_pretrained_weights(model, checkpoint_path):
@@ -184,9 +180,9 @@ class pyramid_trans_expr2(nn.Module):
     def __init__(self, img_size=224, num_classes=7,
                  dims=[64, 128, 256], d_model=768,
                  window_sizes=[7, 7, 7],
-                 d_state=16,  # [NEW] Add this argument
-                 ir50_path='models/pretrain/ir50.pth',
-                 facenet_path='models/pretrain/mobilefacenet_model_best.pth.tar'):
+                 d_state=16,
+                 ir50_path='pretrain/ir50.pth',
+                 facenet_path='pretrain/mobilefacenet_model_best.pth.tar'):
         super().__init__()
 
         self.window_sizes = window_sizes

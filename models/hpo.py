@@ -5,7 +5,6 @@ import optuna
 import seaborn as sns
 import torch
 import torch.nn as nn
-# Import your project modules
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
@@ -27,12 +26,23 @@ class Config:
 
 
 def objective(trial):
-    # 1. Define the Hyperparameter Search Space
-    # -----------------------------------------
-    lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-    weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-2, log=True)
-    rho = trial.suggest_float("rho", 0.01, 0.1)
-    d_state = trial.suggest_categorical("d_state", [16, 32, 64])  # Mamba capacity
+    # --- TAILORED SEARCH SPACE ---
+
+    # Known best: 3.5e-5.
+    # Search Range: 1.0e-5 to 9.0e-5
+    lr = trial.suggest_float("lr", 1e-5, 9e-5, log=True)
+
+    # Known best: 5e-4.
+    # Search Range: 1e-4 to 1e-3
+    weight_decay = trial.suggest_float("weight_decay", 1e-4, 1e-3, log=True)
+
+    # Known best: 0.05.
+    # Search Range: 0.02 to 0.08 (Tightened)
+    rho = trial.suggest_float("rho", 0.02, 0.08)
+
+    # Known best: 16. Mamba state size.
+    # We test 16 vs 32 to see if "bigger is better"
+    d_state = trial.suggest_categorical("d_state", [16, 32])
 
     print(f"\n=== TRIAL {trial.number} START ===")
     print(f"Params: LR={lr:.2e}, WD={weight_decay:.2e}, RHO={rho:.2f}, STATE={d_state}")
@@ -88,7 +98,7 @@ def objective(trial):
 
     for epoch in range(args.epochs):
         train(train_loader, model, criterion, optimizer, epoch, args)
-        val_acc, val_loss, _, _, _ = validate(val_loader, model, criterion, args)
+        val_acc, val_loss, _, _, _, _ = validate(val_loader, model, criterion, args)
 
         scheduler.step()
 
@@ -177,13 +187,13 @@ if __name__ == "__main__":
     # Create the study
     study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner(n_warmup_steps=3))
 
-    # Run optimization (e.g., 20 trials)
-    print("Starting Optimization...")
+    # Enqueue a known good configuration as a baseline
+    study.enqueue_trial({
+        "lr": 3.5e-5,
+        "weight_decay": 5e-4,
+        "rho": 0.05,
+        "d_state": 16
+    })
+
+    print("Starting Optimization (Baseline Enqueued)...")
     study.optimize(objective, n_trials=20)
-
-    print("\noptimization Complete!")
-    print("Best Params:", study.best_params)
-    print("Best Accuracy:", study.best_value)
-
-    # Generate the graphs for your presentation
-    generate_plots(study)
