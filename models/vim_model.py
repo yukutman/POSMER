@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
 from timm.models.layers import DropPath, trunc_normal_
 
-# --- 1. The Core Engine (Custom CUDA Mamba) ---
+# --- 1. The Core Engine (Custom Mamba) ---
 class Mambassm(nn.Module):
     def __init__(self, d_inner, d_state=16, dt_rank=None):
         super().__init__()
@@ -47,7 +47,7 @@ class Mambassm(nn.Module):
         )
         return y.transpose(1, 2)
 
-# --- 2. The Mixer Block ---
+# --- 2. The Mixer Mamba Block ---
 class ViMBlock(nn.Module):
     def __init__(self, dim, d_state=16, expand=2, drop_path=0.):
         super().__init__()
@@ -97,49 +97,3 @@ class PatchEmbed(nn.Module):
         x = self.proj(x).flatten(2).transpose(1, 2)
         x = self.norm(x)
         return x
-
-# --- 4. The Backbone (VisionMamba) ---
-class VisionMamba(nn.Module):
-    def __init__(self,
-                 embed_dim=768,
-                 depth=2,
-                 num_classes=7,
-                 d_state=16,
-                 expand=2,
-                 drop_path_rate=0.1,
-                 **kwargs):
-        super().__init__()
-
-        self.num_classes = num_classes
-        self.embed_dim = embed_dim
-
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
-
-        self.blocks = nn.Sequential(*[
-            ViMBlock(
-                dim=embed_dim,
-                d_state=d_state,
-                expand=expand,
-                drop_path=dpr[i]
-            )
-            for i in range(depth)
-        ])
-
-        self.norm = nn.LayerNorm(embed_dim)
-        self.head = nn.Linear(embed_dim, num_classes)
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-
-    def forward(self, x):
-        # x: (Batch, Seq_Len, Dim)
-        x = self.blocks(x)
-        x = self.norm(x)
-        return self.head(x.mean(dim=1))

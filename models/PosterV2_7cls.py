@@ -184,6 +184,7 @@ class pyramid_trans_expr2(nn.Module):
     def __init__(self, img_size=224, num_classes=7,
                  dims=[64, 128, 256], d_model=768,
                  window_sizes=[7, 7, 7],
+                 d_state=16,  # [NEW] Add this argument
                  ir50_path='models/pretrain/ir50.pth',
                  facenet_path='models/pretrain/mobilefacenet_model_best.pth.tar'):
         super().__init__()
@@ -223,7 +224,7 @@ class pyramid_trans_expr2(nn.Module):
 
         # --- D. Backend ---
         # [CHANGE] Use the explicitly defined BiMambaClassifier
-        self.vim_backend = BiMambaClassifier(embed_dim=d_model, depth=2, num_classes=num_classes)
+        self.vim_backend = BiMambaClassifier(embed_dim=d_model, depth=2, num_classes=num_classes, d_state=d_state)
 
     def forward(self, x):
         # 1. Geometry Features
