@@ -36,9 +36,9 @@ parser.add_argument('--data_type', default='RAF-DB', choices=['RAF-DB', 'AffectN
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model.pth')
 parser.add_argument('--best_checkpoint_path', type=str, default='./checkpoint/' + time_str + 'model_best.pth')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers')
-parser.add_argument('--epochs', default=1, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=10, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=64, type=int, metavar='N')
+parser.add_argument('-b', '--batch-size', default=32, type=int, metavar='N')
 parser.add_argument('--optimizer', type=str, default="adam", help='Optimizer, adam or sgd.')
 
 parser.add_argument('--lr', '--learning-rate', default=3.5e-5, type=float, metavar='LR', dest='lr')
@@ -458,8 +458,9 @@ class RecorderMeter(object):
 
         # 1. Accuracy Plot
         plt.figure()
-        plt.plot(x_axis, self.epoch_accuracy[:self.current_epoch, 0], 'g-', label='Train')
-        plt.plot(x_axis, self.epoch_accuracy[:self.current_epoch, 1], 'y-', label='Valid')
+        # Changed colors to match your image: Train=Blue, Val=Orange
+        plt.plot(x_axis, self.epoch_accuracy[:self.current_epoch, 0], color='tab:blue', label='Train')
+        plt.plot(x_axis, self.epoch_accuracy[:self.current_epoch, 1], color='tab:orange', label='Val')
         plt.title('Accuracy')
         plt.ylabel('%')
         plt.xlabel('Epoch')
@@ -470,8 +471,8 @@ class RecorderMeter(object):
 
         # 2. Loss Plot
         plt.figure()
-        plt.plot(x_axis, self.epoch_losses[:self.current_epoch, 0], 'g-', label='Train')
-        plt.plot(x_axis, self.epoch_losses[:self.current_epoch, 1], 'y-', label='Valid')
+        plt.plot(x_axis, self.epoch_losses[:self.current_epoch, 0], color='tab:blue', label='Train')
+        plt.plot(x_axis, self.epoch_losses[:self.current_epoch, 1], color='tab:orange', label='Val')
         plt.title('Loss')
         plt.ylabel('Loss')
         plt.xlabel('Epoch')
@@ -482,8 +483,8 @@ class RecorderMeter(object):
 
         # 3. F1 Score Plot
         plt.figure()
-        plt.plot(x_axis, self.epoch_f1[:self.current_epoch, 0], 'g-', label='Train')
-        plt.plot(x_axis, self.epoch_f1[:self.current_epoch, 1], 'y-', label='Valid')
+        plt.plot(x_axis, self.epoch_f1[:self.current_epoch, 0], color='tab:blue', label='Train')
+        plt.plot(x_axis, self.epoch_f1[:self.current_epoch, 1], color='tab:orange', label='Val')
         plt.title('F1 Macro Score')
         plt.ylabel('Score')
         plt.xlabel('Epoch')
@@ -492,9 +493,9 @@ class RecorderMeter(object):
         plt.savefig(os.path.join(log_dir, time_str + 'f1_curve.png'))
         plt.close()
 
-        # 4. LR Plot
+        # 4. LR Plot (Kept as Blue)
         plt.figure()
-        plt.plot(x_axis, self.epoch_lr[:self.current_epoch], 'b-', label='LR')
+        plt.plot(x_axis, self.epoch_lr[:self.current_epoch], color='tab:blue', label='LR')
         plt.title('Learning Rate Decay')
         plt.ylabel('LR')
         plt.xlabel('Epoch')
@@ -502,7 +503,7 @@ class RecorderMeter(object):
         plt.savefig(os.path.join(log_dir, time_str + 'lr_curve.png'))
         plt.close()
 
-        # 5. Time Plot [NEW]
+        # 5. Time Plot (Kept as Red)
         plt.figure()
         plt.plot(x_axis, self.epoch_time[:self.current_epoch], 'r-', label='Time')
         plt.title('Time per Epoch')
