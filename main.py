@@ -355,7 +355,7 @@ def validate(val_loader, model, criterion, args):
 
     print(f' * Final Validation Accuracy: {top1.avg:.3f} | F1 Macro: {val_f1:.3f}')
 
-    with open('./log/' + time_str + 'log.txt', 'a') as f:
+    with open('../log/' + time_str + 'log.txt', 'a') as f:
         f.write(' * Accuracy {top1.avg:.3f} | F1 {val_f1:.3f}\n'.format(top1=top1, val_f1=val_f1))
 
     return top1.avg, losses.avg, val_f1, final_output, final_target, D
