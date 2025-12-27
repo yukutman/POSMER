@@ -10,7 +10,7 @@ from torchvision import datasets, transforms
 
 from data_preprocessing.sam import SAM
 from main import train, validate
-from models.PosterV2_7cls import pyramid_trans_expr2
+from models.Posmer_7cls import pyramid_mamba_expr2
 
 
 class Config:
@@ -38,7 +38,7 @@ def objective(trial):
     args = Config()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    model = pyramid_trans_expr2(img_size=224, num_classes=7, d_state=d_state)
+    model = pyramid_mamba_expr2(img_size=224, num_classes=7, d_state=d_state)
     model = torch.nn.DataParallel(model).cuda()
 
     criterion = nn.CrossEntropyLoss()

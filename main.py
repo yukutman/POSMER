@@ -21,7 +21,7 @@ from tqdm import tqdm
 
 from data_preprocessing.sam import SAM
 
-from models.PosterV2_7cls import *
+from models.Posmer_7cls import *
 
 warnings.filterwarnings("ignore")
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -86,7 +86,7 @@ def main():
     print('Training time: ' + now.strftime("%m-%d %H:%M"))
 
     # Create model
-    model = pyramid_trans_expr2(img_size=224, num_classes=7)
+    model = pyramid_mamba_expr2(img_size=224, num_classes=7)
 
     model = torch.nn.DataParallel(model).cuda()
     criterion = torch.nn.CrossEntropyLoss()

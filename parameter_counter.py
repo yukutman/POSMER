@@ -1,5 +1,5 @@
 import torch
-from models.PosterV2_7cls import pyramid_trans_expr2
+from models.Posmer_7cls import pyramid_mamba_expr2
 
 
 def count_parameters(model):
@@ -12,7 +12,7 @@ def count_parameters(model):
     print(f"{'-' * 60}")
 
     # Iterate through the main submodules of the specific architecture
-    # Based on pyramid_trans_expr2 in PosterV2_7cls.py
+    # Based on pyramid_trans_expr2 in Posmer_7cls.py
     modules_to_check = [
         ('Face Backbone (MobileFaceNet)', model.face_backbone),
         ('Visual Backbone (IR50)', model.visual_backbone),
@@ -54,7 +54,7 @@ def count_parameters(model):
 if __name__ == '__main__':
     # Initialize the model exactly as in main.py
     print("Initializing Model...")
-    model = pyramid_trans_expr2(
+    model = pyramid_mamba_expr2(
         img_size=224,
         num_classes=7,
         ir50_path=None,  # No need to load weights for counting
