@@ -363,11 +363,11 @@ def validate(val_loader, model, criterion, args):
 
 
 def save_checkpoint(state, is_best, args):
-    # 1. Save the FULL state (with recorders) for resuming training later
-    # We keep everything here so you can resume training if the server crashes.
+    # Save full state and recorders for resuming training
+    # Keep all information in the main checkpoint in case of resuming the training
     torch.save(state, args.checkpoint_path)
 
-    # 2. Save the BEST model (Cleaned for Inference)
+    # Save the BEST model (Cleaned for Inference)
     if is_best:
         # Create a shallow copy to modify without affecting the original 'state' dict
         best_state = state.copy()
