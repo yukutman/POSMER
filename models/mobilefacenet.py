@@ -1,11 +1,6 @@
-from torch.nn import Linear, Conv2d, BatchNorm1d, BatchNorm2d, PReLU, ReLU, Sigmoid, Dropout2d, Dropout, AvgPool2d, \
-    MaxPool2d, AdaptiveAvgPool2d, Sequential, Module, Parameter
-import torch.nn.functional as F
 import torch
 import torch.nn as nn
-from collections import namedtuple
-import math
-import pdb
+from torch.nn import Linear, Conv2d, BatchNorm1d, BatchNorm2d, PReLU, Sequential, Module
 
 
 ##################################  Original Arcface Model #############################################################
@@ -106,7 +101,6 @@ class GDC(Module):
         self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
         self.linear = Linear(512, embedding_size, bias=False)
-        # self.bn = BatchNorm1d(embedding_size, affine=False)
         self.bn = BatchNorm1d(embedding_size)
 
     def forward(self, x):
@@ -154,40 +148,14 @@ class MobileFaceNet(Module):
 
     def forward(self, x):
         out = self.conv1(x)
-        # print(out.shape)
         out = self.conv2_dw(out)
-        # print(out.shape)
         out = self.conv_23(out)
-        # print(out.shape)
         out3 = self.conv_3(out)
-        # print(out.shape)
         out = self.conv_34(out3)
-        # print(out.shape)
         out4 = self.conv_4(out)  # [128, 14, 14]
-        # print(out.shape)
         out = self.conv_45(out4)  # [128, 7, 7]
-        # print(out.shape)
         out = self.conv_5(out)  # [128, 7, 7]
-        # print(out.shape)
         conv_features = self.conv_6_sep(out)    ##### [B, 512, 7, 7]
         out = self.output_layer(conv_features)  ##### [B, 136]
         return out3, out4, conv_features
 
-
-# model = MobileFaceNet([112, 112],136)
-# input = torch.ones(8,3,112,112).cuda()
-# model = model.cuda()
-# x = model(input)
-# import numpy as np
-# parameters = model.parameters()
-# parameters = sum([np.prod(p.size()) for p in parameters]) / 1_000_000
-# print('Total Parameters: %.3fM' % parameters)
-#
-#
-# from ptflops import get_model_complexity_info
-# macs, params = get_model_complexity_info(model, (3, 112, 112), as_strings=True,
-#                                        print_per_layer_stat=True, verbose=True)
-# print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
-# print('{:<30}  {:<8}'.format('Number of parameters: ', params))
-#
-# print(x.shape)

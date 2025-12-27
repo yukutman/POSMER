@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
 from timm.models.layers import DropPath, trunc_normal_
 
-# --- 1. The Core Engine (Custom Mamba) ---
+# The Core Engine (Custom Mamba) SSM Layer
 class Mambassm(nn.Module):
     def __init__(self, d_inner, d_state=16, dt_rank=None):
         super().__init__()
@@ -47,7 +46,7 @@ class Mambassm(nn.Module):
         )
         return y.transpose(1, 2)
 
-# --- 2. The Mixer Mamba Block ---
+# The Mixer Mamba Block (Optuna Search Target for d_state)
 class ViMBlock(nn.Module):
     def __init__(self, dim, d_state=16, expand=2, drop_path=0.):
         super().__init__()
@@ -85,7 +84,7 @@ class ViMBlock(nn.Module):
 
         return residual + self.drop_path(x)
 
-# --- 3. Helpers ---
+# Helpers to embed pyramid features into tokens
 class PatchEmbed(nn.Module):
     """ Used in PosterV2 to project the pyramid features """
     def __init__(self, img_size=14, patch_size=16, in_c=256, embed_dim=768):

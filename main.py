@@ -20,7 +20,7 @@ from torchsampler import ImbalancedDatasetSampler
 from tqdm import tqdm
 
 from data_preprocessing.sam import SAM
-# --- Import from the new Mamba-based PosterV2 file ---
+
 from models.PosterV2_7cls import *
 
 warnings.filterwarnings("ignore")
@@ -456,7 +456,7 @@ class RecorderMeter(object):
     def plot_curves(self, log_dir):
         x_axis = np.arange(self.current_epoch)
 
-        # 1. Accuracy Plot
+        # Accuracy Plot
         plt.figure()
         # Changed colors to match your image: Train=Blue, Val=Orange
         plt.plot(x_axis, self.epoch_accuracy[:self.current_epoch, 0], color='tab:blue', label='Train')
@@ -469,7 +469,7 @@ class RecorderMeter(object):
         plt.savefig(os.path.join(log_dir, time_str + 'accuracy_curve.png'))
         plt.close()
 
-        # 2. Loss Plot
+        # Loss Plot
         plt.figure()
         plt.plot(x_axis, self.epoch_losses[:self.current_epoch, 0], color='tab:blue', label='Train')
         plt.plot(x_axis, self.epoch_losses[:self.current_epoch, 1], color='tab:orange', label='Val')
@@ -481,7 +481,7 @@ class RecorderMeter(object):
         plt.savefig(os.path.join(log_dir, time_str + 'loss_curve.png'))
         plt.close()
 
-        # 3. F1 Score Plot
+        # F1 Score Plot
         plt.figure()
         plt.plot(x_axis, self.epoch_f1[:self.current_epoch, 0], color='tab:blue', label='Train')
         plt.plot(x_axis, self.epoch_f1[:self.current_epoch, 1], color='tab:orange', label='Val')
@@ -493,7 +493,7 @@ class RecorderMeter(object):
         plt.savefig(os.path.join(log_dir, time_str + 'f1_curve.png'))
         plt.close()
 
-        # 4. LR Plot (Kept as Blue)
+        # LR Plot (Kept as Blue)
         plt.figure()
         plt.plot(x_axis, self.epoch_lr[:self.current_epoch], color='tab:blue', label='LR')
         plt.title('Learning Rate Decay')
@@ -503,7 +503,7 @@ class RecorderMeter(object):
         plt.savefig(os.path.join(log_dir, time_str + 'lr_curve.png'))
         plt.close()
 
-        # 5. Time Plot (Kept as Red)
+        # Time Plot (Kept as Red)
         plt.figure()
         plt.plot(x_axis, self.epoch_time[:self.current_epoch], 'r-', label='Time')
         plt.title('Time per Epoch')

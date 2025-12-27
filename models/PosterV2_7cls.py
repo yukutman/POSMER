@@ -29,7 +29,7 @@ def load_pretrained_weights(model, checkpoint_path):
     return model
 
 
-# --- Helper Functions for Window Partitioning  ---
+# Helper Functions for Window Partitioning
 def window_partition(x, window_size):
     """
     Args:
@@ -42,14 +42,14 @@ def window_partition(x, window_size):
     h_w = H // window_size
     w_w = W // window_size
 
-    # 1. Reshape to separate windows
+    # Reshape to separate windows
     x = x.view(B, C, h_w, window_size, w_w, window_size)
 
-    # 2. Permute to group window parts together
+    # Permute to group window parts together
     # (B, C, h_w, win, w_w, win) -> (B, h_w, w_w, win, win, C)
     x = x.permute(0, 2, 4, 3, 5, 1).contiguous()
 
-    # 3. Merge batch and window counts, and flatten the window pixels
+    # Merge batch and window counts, and flatten the window pixels
     # (B * num_windows, window_area, C)
     windows = x.view(-1, window_size * window_size, C)
     return windows
@@ -72,13 +72,13 @@ def window_reverse(windows, window_size, H, W, C):
     # Recover Batch size
     B = int(windows.shape[0] / (h_w * w_w))
 
-    # 1. Reshape back to grid
+    # Reshape back to grid
     x = windows.view(B, h_w, w_w, window_size, window_size, C)
 
-    # 2. Permute back to (B, C, H, W) order
+    # Permute back to (B, C, H, W) order
     x = x.permute(0, 5, 1, 3, 2, 4).contiguous()
 
-    # 3. Final View
+    # Final View
     x = x.view(B, C, H, W)
     return x
 

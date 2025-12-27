@@ -8,13 +8,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
-# --- User Imports (Assuming these exist in your project structure) ---
 from data_preprocessing.sam import SAM
 from main import train, validate
 from models.PosterV2_7cls import pyramid_trans_expr2
 
 
-# --- Configuration ---
 class Config:
     def __init__(self):
         self.data = '../archive/DATASET'
@@ -27,7 +25,7 @@ class Config:
 
 
 def objective(trial):
-    # --- TAILORED SEARCH SPACE ---
+    # search space
     lr = trial.suggest_float("lr", 1e-5, 9e-5, log=True)
     weight_decay = trial.suggest_float("weight_decay", 1e-4, 1e-3, log=True)
     rho = trial.suggest_float("rho", 0.02, 0.08)
@@ -36,7 +34,7 @@ def objective(trial):
     print(f"\n=== TRIAL {trial.number} START ===")
     print(f"Params: LR={lr:.2e}, WD={weight_decay:.2e}, RHO={rho:.2f}, STATE={d_state}")
 
-    # 2. Setup Model & Data
+    # Setup Model and Data
     args = Config()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
@@ -74,7 +72,7 @@ def objective(trial):
     val_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False,
                             num_workers=args.workers, pin_memory=True)
 
-    # 3. Training Loop with Early Stopping
+    # Training Loop with Early Stopping
     patience = 3
     counter = 0
     best_trial_acc = 0.0
@@ -167,7 +165,7 @@ def save_results(study):
         except Exception as e:
             print(f"Could not plot {param}: {e}")
 
-    # Optional: Parallel Coordinate Plot (requires plotly/kaleido for image save)
+    # Parallel Coordinate Plot
     try:
         from optuna.visualization import plot_parallel_coordinate
         # Note: writing static images requires 'kaleido' package installed
@@ -176,7 +174,7 @@ def save_results(study):
         fig.write_image("hpo_plots/all_params_parallel.png")
         print("-> Saved parallel coordinate plot.")
     except Exception:
-        pass  # Silently fail if plotly/kaleido not installed, standard plots are enough
+        pass  # Silently fail if plotly/kaleido not installed.
 
 
 if __name__ == "__main__":

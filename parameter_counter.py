@@ -11,7 +11,7 @@ def count_parameters(model):
     print(f"{'Module':<30} | {'Total Params':<12} | {'Trainable':<10}")
     print(f"{'-' * 60}")
 
-    # Iterate through the main sub-modules of your specific architecture
+    # Iterate through the main submodules of the specific architecture
     # Based on pyramid_trans_expr2 in PosterV2_7cls.py
     modules_to_check = [
         ('Face Backbone (MobileFaceNet)', model.face_backbone),
@@ -53,7 +53,6 @@ def count_parameters(model):
 
 if __name__ == '__main__':
     # Initialize the model exactly as in main.py
-    # Note: We set paths to '' or None here to avoid needing the actual .pth files just for counting
     print("Initializing Model...")
     model = pyramid_trans_expr2(
         img_size=224,
