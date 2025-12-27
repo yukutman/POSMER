@@ -363,10 +363,24 @@ def validate(val_loader, model, criterion, args):
 
 
 def save_checkpoint(state, is_best, args):
+    # 1. Save the FULL state (with recorders) for resuming training later
+    # We keep everything here so you can resume training if the server crashes.
     torch.save(state, args.checkpoint_path)
+
+    # 2. Save the BEST model (Cleaned for Inference)
     if is_best:
-        best_state = state.pop('optimizer')
+        # Create a shallow copy to modify without affecting the original 'state' dict
+        best_state = state.copy()
+
+        # REMOVE keys that cause loading errors or waste space
+        keys_to_remove = ['optimizer', 'recorder', 'recorder1']
+        for key in keys_to_remove:
+            if key in best_state:
+                del best_state[key]
+
+        # Save the clean, portable checkpoint
         torch.save(best_state, args.best_checkpoint_path)
+        print(f"Saved portable best checkpoint to: {args.best_checkpoint_path}")
 
 
 class AverageMeter(object):
