@@ -40,6 +40,7 @@ parser.add_argument('--epochs', default=10, type=int, metavar='N', help='number 
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=32, type=int, metavar='N')
 parser.add_argument('--optimizer', type=str, default="adam", help='Optimizer, adam or sgd.')
+parser.add_argument('--d_state', type=int, default=32, help='SSM state dimension')
 
 parser.add_argument('--lr', '--learning-rate', default=3.5e-5, type=float, metavar='LR', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
@@ -86,7 +87,7 @@ def main():
     print('Training time: ' + now.strftime("%m-%d %H:%M"))
 
     # Create model
-    model = pyramid_mamba_expr2(img_size=224, num_classes=7)
+    model = pyramid_mamba_expr2(img_size=224, num_classes=7, d_state=args.d_state)
 
     model = torch.nn.DataParallel(model).cuda()
     criterion = torch.nn.CrossEntropyLoss()

@@ -179,8 +179,8 @@ class pyramid_mamba_expr2(nn.Module):
                  dims=[64, 128, 256], d_model=768,
                  window_sizes=[7, 7, 7],
                  d_state=16,
-                 ir50_path='pretrain/ir50.pth',
-                 facenet_path='pretrain/mobilefacenet_model_best.pth.tar'):
+                 ir50_path='models/pretrain/ir50.pth',
+                 facenet_path='models/pretrain/mobilefacenet_model_best.pth.tar'):
         super().__init__()
 
         self.window_sizes = window_sizes
@@ -202,9 +202,9 @@ class pyramid_mamba_expr2(nn.Module):
 
         self.face_proj = nn.Conv2d(512, 256, 3, 1, 1)
 
-        self.fusion_stage1 = LandmarkGatedMamba(d_model=dims[0])
-        self.fusion_stage2 = LandmarkGatedMamba(d_model=dims[1])
-        self.fusion_stage3 = LandmarkGatedMamba(d_model=dims[2])
+        self.fusion_stage1 = LandmarkGatedMamba(d_model=dims[0], d_state=d_state)
+        self.fusion_stage2 = LandmarkGatedMamba(d_model=dims[1], d_state=d_state)
+        self.fusion_stage3 = LandmarkGatedMamba(d_model=dims[2], d_state=d_state)
 
         # Stage Projections
         self.proj_stage1 = nn.Sequential(
