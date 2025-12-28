@@ -86,7 +86,7 @@ def window_reverse(windows, window_size, H, W, C):
 class LandmarkGatedMamba(nn.Module):
     """
     Fuses Visual features and Landmark features using a Gated SSM.
-    Uses YOUR custom Mambassm backend.
+    Uses a custom Mambassm backend.
     """
 
     def __init__(self, d_model, d_state=16):
@@ -99,7 +99,7 @@ class LandmarkGatedMamba(nn.Module):
         nn.init.constant_(self.film_generator.bias, 0)
         self.film_generator.bias.data[:d_model] = 1
 
-        # Use YOUR custom Mambassm from vim_model.py
+        # Use custom Mambassm from vim_model.py
         self.ssm = Mambassm(d_inner=d_model, d_state=d_state)
         self.norm = nn.LayerNorm(d_model)
 
@@ -123,6 +123,8 @@ class LandmarkGatedMamba(nn.Module):
 
         # Modulate & Scan
         x_modulated = (alpha * x_visual) + beta
+        # done with modulation pass to ssm after norm and
+        # add residual connection back to modulated input
         return x_visual + self.ssm(self.norm(x_modulated))
 
 
@@ -169,6 +171,7 @@ class BiMambaClassifier(nn.Module):
         # Global Average Pooling
         x = x.mean(dim=1)
 
+        # Normalize the output and classify it using a linear layer
         x = self.norm_f(x)
         x = self.head(x)
         return x
