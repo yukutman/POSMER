@@ -8,8 +8,8 @@ import os
 from models.Posmer_7cls import pyramid_mamba_expr2
 
 
-CHECKPOINT_PATH = "checkpoint/posmer_acc_092047.pth"  # Point this to your .pth file
-D_STATE = 32  # Must match your HPO settings (8, 16, or 32)
+CHECKPOINT_PATH = "checkpoint/posmer_acc_092047.pth"
+D_STATE = 32  # Must match HPO settings (8, 16, or 32)
 GPU_ID = "0"
 
 
@@ -17,7 +17,7 @@ if GPU_ID:
     os.environ["CUDA_VISIBLE_DEVICES"] = GPU_ID
 device = torch.device("cuda" if torch.cuda.is_available() and GPU_ID else "cpu")
 
-CLASS_NAMES = ["Surprise", 'Fear', 'Anger', 'Happy', 'Sad', 'Disgust', 'Neutral']
+CLASS_NAMES = ['Surprise', 'Fear', 'Disgust', 'Happy', 'Sad', 'Anger', 'Neutral']
 
 
 def load_model():
@@ -84,9 +84,7 @@ def predict_emotion(image):
         return {f"Error: {str(e)}": 0.0}
 
 
-# ==========================================
-# 4. LAUNCH INTERFACE
-# ==========================================
+# Launch Gradio Interface
 if __name__ == "__main__":
     demo = gr.Interface(
         fn=predict_emotion,
@@ -98,4 +96,4 @@ if __name__ == "__main__":
     )
 
     demo.launch()
-    # share=True creates a public link you can send to your friend/professor!
+    # share=True creates a public link
